@@ -2,6 +2,7 @@ import express, { Express, Request, Response } from 'express';
 import helmet from 'helmet';
 import cors from 'cors';
 import morgan from 'morgan';
+import apiRoutes from './src/routes/apiRoutes';
 
 const app: Express = express();
 const PORT = process.env.PORT || 3000;
@@ -19,6 +20,11 @@ app.get('/health', (req: Request, res: Response) => {
 
 
 // add the route here
+app.get('/api/insights', (req: Request, res: Response) => {
+    res.status(200).json({ message: 'Insights' });
+});
+
+app.use('/api', apiRoutes);
 
 // 404 handler
 app.use((req: Request, res: Response) => {
