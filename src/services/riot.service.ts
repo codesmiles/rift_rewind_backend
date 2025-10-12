@@ -10,7 +10,8 @@ export class RiotAPIService {
     };
 
     // Get PUUID by summoner name
-    async getPUUID(gameName: string, tagLine: string, region: string = 'na1') {
+    async getPUUID(gameName: string, tagLine: string, region: string = 'americas') {
+        console.log(gameName, tagLine, region);
         const url = `https://${region}.api.riotgames.com/riot/account/v1/accounts/by-riot-id/${gameName}/${tagLine}`;
         const response = await axios.get(url, { headers: this.headers });
         return response.data.puuid;
@@ -31,8 +32,10 @@ export class RiotAPIService {
     }
 
     // Batch fetch matches
-    async getAllMatches(puuid: string) {
-        const matchIds = await this.getMatchHistory(puuid);
+    async getAllMatches(puuid: string, countNumber?: number) {
+        const matchIds = await this.getMatchHistory(puuid, countNumber);
+        console.log(matchIds);
+
         const matches = await Promise.all(
             matchIds.map((id: string) => this.getMatchDetails(id))
         );

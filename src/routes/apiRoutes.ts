@@ -1,40 +1,64 @@
 // backend/src/routes/api.routes.ts
-import express from 'express';
+import { Router , Request,Response} from 'express';
 import { RiotAPIService } from '../services/riot.service';
 import { InsightsService } from '../services/insights.service';
 
-const router = express.Router();
+const router = Router();
 const riotAPI = new RiotAPIService();
 const insightsService = new InsightsService();
 
+export class ResponseFormat  {
+    private readonly success: boolean;
+    private readonly data: any;
+
+    constructor(success:boolean, data:any) {
+        this.success = success;
+        this.data = data;
+    }
+    
+    toJson() {
+        return {
+            success: this.success,
+            data: this.data
+        }
+    }
+}
+
 // Main endpoint: Generate wrapped
-router.post('/generate-wrapped', async (req, res) => {
+router.post('/wrapped/generate', async (req:Request, res:Response) => {
     try {
-        const { gameName, tagLine } = req.body;
+        // TODO: Add validations later
+        // const { gameName, tagLine, region, count } = await req.body;
+        const count = await req.body.count;
+        const region = await req.body.region;
+        const tagLine = await req.body.tagLine;
+        const gameName = await req.body.gameName;
+        
+        if(!gameName || !tagLine){
+            throw new Error('Missing required fields');
+        }
 
-        // 1. Get PUUID
-        const puuid = await riotAPI.getPUUID(gameName, tagLine);
+        // Get PUUID
+        const puuid = await riotAPI.getPUUID(gameName, tagLine, region);
 
-        // 2. Fetch matches
-        const matches = await riotAPI.getAllMatches(puuid);
+        // Fetch matches
+        const countNumber = count;
+        const matches = await riotAPI.getAllMatches(puuid,countNumber);
 
-        // 3. Generate insights
+        // Generate insights
         const wrapped = await insightsService.generateFullWrapped(matches, puuid);
-
-        res.json({
-            success: true,
-            data: wrapped
-        });
+        console.log("\n\n\n response", { puuid, matches, wrapped });
+        
+        const response = new ResponseFormat(true, wrapped)
+        res.json(response.toJson());
     } catch (error: any) {
-        res.status(500).json({
-            success: false,
-            error: error.message
-        });
+        const response = new ResponseFormat(false, error)
+        res.status(500).json(response.toJson());
     }
 });
 
 // Quick stats endpoint (no AI, faster)
-router.post('/quick-stats', async (req, res) => {
+router.post('/quick-stats', async (req:Request, res:Response) => {
     try {
         const { gameName, tagLine } = req.body;
         const puuid = await riotAPI.getPUUID(gameName, tagLine);
@@ -43,17 +67,17 @@ router.post('/quick-stats', async (req, res) => {
         const processor = new (await import('../services/dataprocessing.service')).DataProcessorService();
         const stats = processor.processMatchData(matches, puuid);
 
-        res.json({ success: true, data: stats });
+        const response = new ResponseFormat(true, stats)
+        res.json(response.toJson());
     } catch (error: any) {
-        res.status(500).json({ success: false, error: error.message });
+        const response = new ResponseFormat(false, error.message)
+        res.status(500).json(response.toJson());
     }
 });
 
 
-router.get('/regions', (req, res) => {
-    res.json({
-        success: true,
-        data: riotAPI.getRegions()
-    });
+router.get('/regions', (req:Request, res:Response) => {
+    const response = new ResponseFormat(true, riotAPI.getRegions())
+    res.json(response.toJson());
 });
 export default router;

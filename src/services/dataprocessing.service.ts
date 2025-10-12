@@ -2,18 +2,21 @@ export interface ChampionStat {
     name: string;
     games: number;
     wins: number;
-    kda: number;
+    losses: number;
     winRate: number;
+    kda: number;
     avgKDA: number;
+    totalKills: number;
+    totalDeaths: number;
+    totalAssists: number;
 }
 
 export interface RoleStats {
-    [role: string]: {
-        games: number;
-        wins: number;
-        winRate: number;
-        avgKDA: number;
-    };
+  TOP: number;
+  JUNGLE: number;
+  MIDDLE: number;
+  BOTTOM: number;
+  UTILITY: number;
 }
 
 export interface MonthlyPerformance {
@@ -42,6 +45,7 @@ export interface TiltAnalysis {
     tiltRecoveryRate: number;
     gamesAfterLoss: number;
     winsAfterLoss: number;
+    avgPerformanceAfterLoss: number;
 }
 
 export interface ProcessedStats {
@@ -50,22 +54,62 @@ export interface ProcessedStats {
     winRate: number;
     streaks: StreakData;
     totalGames: number;
-    // kdaAverage: number;
-    // visionScore: number;
+    kdaAverage: number;
+    visionScore: number;
     tiltPatterns: TiltAnalysis;
     championStats: ChampionStat[];
     // comebackGames: number;
     peakPerformance: PeakMoment;
-    // roleDistribution: RoleStats;
+    roleDistribution: RoleStats;
     performanceTimeline: MonthlyPerformance[];
+}
+
+interface ProcessedMatch {
+  matchId: string;
+  gameDate: Date;
+  win: boolean;
+  championName: string;
+  kills: number;
+  deaths: number;
+  assists: number;
+  kda: number;
+  visionScore: number;
+  goldEarned: number;
+  totalDamage: number;
+  position: string;
+  gameDuration: number;
 }
 
 export class DataProcessorService {
     processMatchData(matches: any[], puuid: string):ProcessedStats {
-        const playerMatches = matches.map(match => {
+        const playerMatches = this.extractPlayerMatches(matches, puuid);
+
+        return {
+            totalGames: playerMatches.length,
+            wins: playerMatches.filter(m => m.win).length,
+            losses: playerMatches.filter(m => !m.win).length,
+            winRate: this.calculateWinRate(playerMatches),
+            kdaAverage: this.calculateAverageKDA(playerMatches),
+            visionScore: this.calculateAverageVision(playerMatches),
+            championStats: this.calculateChampionStats(playerMatches),
+            roleDistribution: this.calculateRoleDistribution(playerMatches),
+            performanceTimeline: this.calculateMonthlyPerformance(playerMatches),
+            streaks: this.calculateStreaks(playerMatches),
+            peakPerformance: this.findPeakMoment(playerMatches),
+            tiltPatterns: this.analyzeTiltPatterns(playerMatches),
+        };
+    }
+
+    private extractPlayerMatches(matches: any[], puuid: string): ProcessedMatch[] {
+        return matches.map(match => {
             const participant = match.info.participants.find(
                 (p: any) => p.puuid === puuid
             );
+
+            if (!participant) {
+                throw new Error('Player not found in match');
+            }
+
             return {
                 matchId: match.metadata.matchId,
                 gameDate: new Date(match.info.gameCreation),
@@ -74,53 +118,60 @@ export class DataProcessorService {
                 kills: participant.kills,
                 deaths: participant.deaths,
                 assists: participant.assists,
-                kda: (participant.kills + participant.assists) / Math.max(1, participant.deaths),
+                kda: participant.deaths === 0
+                    ? participant.kills + participant.assists
+                    : (participant.kills + participant.assists) / participant.deaths,
                 visionScore: participant.visionScore,
                 goldEarned: participant.goldEarned,
                 totalDamage: participant.totalDamageDealtToChampions,
-                position: participant.teamPosition,
+                position: participant.teamPosition || 'UNKNOWN',
                 gameDuration: match.info.gameDuration,
             };
         });
-
-        return {
-            wins: playerMatches.filter(m => m.win).length,
-            losses: playerMatches.filter(m => !m.win).length,
-            streaks: this.calculateStreaks(playerMatches),
-            winRate: (playerMatches.filter(m => m.win).length / playerMatches.length) * 100,
-            // kdaAverage: this.calculateAverageKDA(playerMatches),
-            totalGames: playerMatches.length,
-            // visionScore: this.calculateAverageVision(playerMatches),
-            tiltPatterns: this.analyzeTiltPatterns(playerMatches),
-            // comebackGames: this.detectComebackGames(playerMatches, matches),
-            championStats: this.calculateChampionStats(playerMatches),
-            peakPerformance: this.findPeakMoment(playerMatches),
-            // roleDistribution: this.calculateRoleDistribution(playerMatches),
-            performanceTimeline: this.calculateMonthlyPerformance(playerMatches),
-        };
     }
 
-    private calculateChampionStats(matches: any[]) {
-        const champMap = new Map();
+    private calculateChampionStats(matches: ProcessedMatch[]): ChampionStat[] {
+        const champMap = new Map<string, ChampionStat>();
+
         matches.forEach(match => {
             const champ = match.championName;
             if (!champMap.has(champ)) {
-                champMap.set(champ, { name: champ, games: 0, wins: 0, kda: 0 });
+                champMap.set(champ, {
+                    name: champ,
+                    games: 0,
+                    wins: 0,
+                    losses: 0,
+                    winRate: 0,
+                    kda: 0,
+                    avgKDA: 0,
+                    totalKills: 0,
+                    totalDeaths: 0,
+                    totalAssists: 0,
+                });
             }
-            const stats = champMap.get(champ);
+
+            const stats = champMap.get(champ)!;
             stats.games++;
-            if (match.win) stats.wins++;
+            if (match.win) {
+                stats.wins++;
+            } else {
+                stats.losses++;
+            }
             stats.kda += match.kda;
+            stats.totalKills += match.kills;
+            stats.totalDeaths += match.deaths;
+            stats.totalAssists += match.assists;
         });
 
         return Array.from(champMap.values())
             .map(champ => ({
                 ...champ,
                 winRate: (champ.wins / champ.games) * 100,
-                avgKDA: champ.kda / champ.games
+                avgKDA: champ.kda / champ.games,
             }))
             .sort((a, b) => b.games - a.games);
     }
+
 
     private calculateMonthlyPerformance(matches: any[]) {
         const monthlyData = new Map();
@@ -167,27 +218,6 @@ export class DataProcessorService {
         return { longestWinStreak, longestLossStreak };
     }
 
-    private analyzeTiltPatterns(matches: any[]) {
-        // Performance after losses
-        let performanceAfterLoss = 0;
-        let lossCount = 0;
-
-        for (let i = 1; i < matches.length; i++) {
-            if (!matches[i - 1].win) {
-                lossCount++;
-                if (matches[i].win) performanceAfterLoss++;
-            }
-        }
-
-        const tiltRecoveryRate = lossCount > 0 ? (performanceAfterLoss / lossCount) * 100 : 0;
-
-        return {
-            tiltRecoveryRate,
-            gamesAfterLoss: lossCount,
-            winsAfterLoss: performanceAfterLoss
-        };
-    }
-
     private findPeakMoment(matches: any[]) {
         const bestGame = matches.reduce((best, current) => {
             return current.kda > best.kda ? current : best;
@@ -203,9 +233,69 @@ export class DataProcessorService {
         };
     }
 
+
+    private calculateWinRate(matches: ProcessedMatch[]): number {
+        if (matches.length === 0) return 0;
+        const wins = matches.filter(m => m.win).length;
+        return (wins / matches.length) * 100;
+    }
+
     // Additional helper methods...
-    private calculateRoleDistribution(matches: any[]) { /* ... */ }
-    private calculateAverageKDA(matches: any[]) { /* ... */ }
-    private calculateAverageVision(matches: any[]) { /* ... */ }
+    private calculateRoleDistribution(matches: ProcessedMatch[]): RoleStats {
+        const roles: RoleStats = {
+            TOP: 0,
+            JUNGLE: 0,
+            MIDDLE: 0,
+            BOTTOM: 0,
+            UTILITY: 0,
+        };
+
+        matches.forEach(match => {
+            const position = match.position.toUpperCase();
+            if (position in roles) {
+                roles[position as keyof RoleStats]++;
+            }
+        });
+
+        return roles;
+    }
+
+    private calculateAverageKDA(matches: any[]):number {
+        if (matches.length === 0) return 0;
+        const totalKDA = matches.reduce((sum, m) => sum + m.kda, 0);
+        return totalKDA / matches.length;
+}
+    private calculateAverageVision(matches: any[]) {
+        if (matches.length === 0) return 0;
+        const totalVision = matches.reduce((sum, m) => sum + m.visionScore, 0);
+        return totalVision / matches.length;
+    }
+    private analyzeTiltPatterns(matches: ProcessedMatch[]): TiltAnalysis {
+        // Sort by date (oldest first)
+        const sortedMatches = [...matches].sort(
+            (a, b) => a.gameDate.getTime() - b.gameDate.getTime()
+        );
+
+        let gamesAfterLoss = 0;
+        let winsAfterLoss = 0;
+        let totalKDAAfterLoss = 0;
+
+        for (let i = 1; i < sortedMatches.length; i++) {
+            if (!sortedMatches[i - 1].win) {
+                gamesAfterLoss++;
+                totalKDAAfterLoss += sortedMatches[i].kda;
+                if (sortedMatches[i].win) {
+                    winsAfterLoss++;
+                }
+            }
+        }
+
+        return {
+            tiltRecoveryRate: gamesAfterLoss > 0 ? (winsAfterLoss / gamesAfterLoss) * 100 : 0,
+            gamesAfterLoss,
+            winsAfterLoss,
+            avgPerformanceAfterLoss: gamesAfterLoss > 0 ? totalKDAAfterLoss / gamesAfterLoss : 0,
+        };
+    }
     private detectComebackGames(matches: any[], fullMatches: any[]) { /* ... */ }
 }
