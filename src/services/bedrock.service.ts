@@ -1,22 +1,7 @@
 
-export interface Achievement {
-    id: string;
-    title: string;
-    description: string;
-    category: 'legendary' | 'quirky' | 'narrative';
-    rarity: 'common' | 'rare' | 'epic' | 'legendary';
-    icon?: string;
-}
-
-export interface AlternateReality {
-    scenario: string;
-    analysis: string;
-    projectedWinRate?: number;
-    projectedRank?: string;
-}
-
 import { BedrockRuntimeClient, InvokeModelCommand } from '@aws-sdk/client-bedrock-runtime';
-import {  ProcessedStats } from '../services/dataprocessing.service';
+import { Achievement, AlternateReality, ProcessedStats } from '../utils/interfaces.util';
+
 
 export class BedrockService {
     private client: BedrockRuntimeClient;

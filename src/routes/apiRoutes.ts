@@ -46,7 +46,7 @@ router.post('/wrapped/generate', async (req:Request, res:Response) => {
         const matches = await riotAPI.getAllMatches(puuid,countNumber);
 
         // Generate insights
-        const wrapped = await insightsService.generateFullWrapped(matches, puuid);
+        const wrapped = await insightsService.generateFullWrapped(matches, puuid, gameName, tagLine);
         console.log("\n\n\n response", { puuid, matches, wrapped });
         
         const response = new ResponseFormat(true, wrapped)

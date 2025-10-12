@@ -1,32 +1,39 @@
-// backend/src/services/riotAPI.service.ts
 import axios from 'axios';
 
-const RIOT_API_KEY = process.env.RIOT_API_KEY;
-const BASE_URL = process.env.RIOT_API_BASE_URL;
+class RiotApiEndpoints {
+    public static readonly RIOT_API_KEY = process.env.RIOT_API_KEY || "";
+    private readonly BASE_URL = process.env.RIOT_API_BASE_URL ?? "";
+
+    getPUUID = (gameName: string, tagLine: string, region: string = 'americas') =>`https://${region}.api.riotgames.com/riot/account/v1/accounts/by-riot-id/${gameName}/${tagLine}`;
+    getMatchHistory = (puuid: string, count: number = 100) => `${this.BASE_URL}/lol/match/v5/matches/by-puuid/${puuid}/ids?start=0&count=${count}`;
+    getMatchDetails = (matchId: string) => `${this.BASE_URL}/lol/match/v5/matches/${matchId}`;
+    getAllMatches = (puuid: string, countNumber?: number) => `${this.BASE_URL}/lol/match/v5/matches/by-puuid/${puuid}/ids?start=0&count=${countNumber}`;
+    getRegions = () => `${this.BASE_URL}/lol/region/v1/regions`;
+}
 
 export class RiotAPIService {
     private readonly headers = {
-        'X-Riot-Token': RIOT_API_KEY!
+        'X-Riot-Token': RiotApiEndpoints.RIOT_API_KEY!
     };
 
     // Get PUUID by summoner name
     async getPUUID(gameName: string, tagLine: string, region: string = 'americas') {
         console.log(gameName, tagLine, region);
-        const url = `https://${region}.api.riotgames.com/riot/account/v1/accounts/by-riot-id/${gameName}/${tagLine}`;
+        const url = new RiotApiEndpoints().getPUUID(gameName, tagLine, region);
         const response = await axios.get(url, { headers: this.headers });
         return response.data.puuid;
     }
 
     // Get match history (last 100 matches)
     async getMatchHistory(puuid: string, count: number = 100) {
-        const url = `${BASE_URL}/lol/match/v5/matches/by-puuid/${puuid}/ids?start=0&count=${count}`;
+        const url = new RiotApiEndpoints().getMatchHistory(puuid, count);
         const response = await axios.get(url, { headers: this.headers });
         return response.data;
     }
 
     // Get match details
     async getMatchDetails(matchId: string) {
-        const url = `${BASE_URL}/lol/match/v5/matches/${matchId}`;
+        const url = new RiotApiEndpoints().getMatchDetails(matchId);
         const response = await axios.get(url, { headers: this.headers });
         return response.data;
     }
@@ -43,7 +50,7 @@ export class RiotAPIService {
     }
 
     async getRegions() {
-        const url = `${BASE_URL}/lol/region/v1/regions`;
+        const url = new RiotApiEndpoints().getRegions();
         const response = await axios.get(url, { headers: this.headers });
         return response.data;
     }

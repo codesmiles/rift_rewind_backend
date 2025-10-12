@@ -80,8 +80,8 @@ export const validateSummonerMock = () => {
 
 export const generate_content_response_mock = () => {
     const req_body = {
-        "stats": { /* processed stats object */ },
-        "tone": "hype" | "nostalgic" | "roast" | "growth" | "meme"
+        // "stats": { /* processed stats object */ },
+        // "tone": "hype" | "nostalgic" | "roast" | "growth" | "meme"
     }
 
     return {
@@ -118,9 +118,9 @@ export const generateAchievements = () => {
 
 export const alternate_reality_mock = () => {
     const request_body = {
-        "stats": { /* processed stats */ },
-        "scenario": "custom" | "best-champion" | "peak-hours" | "no-tilt",
-        "customScenario": "What if I never played after midnight?" // if scenario is "custom"
+        // "stats": { /* processed stats */ },
+        // "scenario": "custom" | "best-champion" | "peak-hours" | "no-tilt",
+        // "customScenario": "What if I never played after midnight?" // if scenario is "custom"
     }
 
     return {
@@ -177,7 +177,7 @@ export const get_match_details_mock = () => {
             "matchId": "NA1_123",
             "gameCreation": 1234567890,
             "gameDuration": 1847,
-            "participants": [...]
+            "participants": []
         }
     }
 } 

@@ -1,21 +1,7 @@
-import { DataProcessorService, ProcessedStats } from './dataprocessing.service';
-import { Achievement, AlternateReality, BedrockService } from './bedrock.service';
-export interface AIInsights {
-    story: string;
-    achievements: Achievement[];
-    alternateRealities: AlternateReality[];
-}
-export interface WrappedData {
-    playerInfo: {
-        gameName: string;
-        tagLine: string;
-        puuid: string;
-    };
-    stats: ProcessedStats;
-    aiInsights: AIInsights;
-    generatedAt: string;
-}
-// import { AIInsights, WrappedData } from './types';
+import { DataProcessorService, } from './dataprocessing.service';
+import { BedrockService } from './bedrock.service';
+import { AIInsights, WrappedData } from '../utils/interfaces.util';
+
 
 export class InsightsService {
     private processor: DataProcessorService;
