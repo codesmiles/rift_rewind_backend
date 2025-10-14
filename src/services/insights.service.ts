@@ -4,8 +4,8 @@ import { AIInsights, WrappedData } from '../utils/interfaces.util';
 
 
 export class InsightsService {
-    private processor: DataProcessorService;
-    private bedrock: BedrockService;
+    private readonly processor: DataProcessorService;
+    private readonly bedrock: BedrockService;
 
     constructor() {
         this.processor = new DataProcessorService();
@@ -18,6 +18,8 @@ export class InsightsService {
         gameName: string,
         tagLine: string
     ): Promise<WrappedData> {
+        // TODO: save to the db if it exists and cache for 24 hours and work towards the logic to update the db every 30 days
+
         console.log(`Processing ${matches.length} matches...`);
 
         // Process stats

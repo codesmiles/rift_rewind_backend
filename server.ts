@@ -3,6 +3,8 @@ import helmet from 'helmet';
 import cors from 'cors';
 import morgan from 'morgan';
 import apiRoutes from './src/routes/apiRoutes';
+import mongoose from 'mongoose';
+import {mongoConfig} from './src/configs';
 
 const app: Express = express();
 const PORT = process.env.PORT || 3000;
@@ -31,6 +33,20 @@ app.use((req: Request, res: Response) => {
     res.status(404).json({ error: 'Route not found' });
 });
 
-app.listen(PORT, () => {
-    console.log(`Server is running on port ${PORT}`);
-});
+const start = () => {
+    mongoose.set("strictQuery", true);
+
+    mongoose.connect(mongoConfig.mongoURI as string)
+        .then(() => {
+            console.log("Successfully connected to data base.", mongoConfig.mongoURI);
+        })
+        .catch((err) => {
+            console.log("bgRed", "There was an error connecting to data base" + err);
+        });
+
+    app.listen(PORT, () => {
+        console.log("Process is listening to PORT: ", PORT)
+    })
+}
+
+start();

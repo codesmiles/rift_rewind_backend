@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { HasApiHelth } from '../utils';
 
 class RiotApiEndpoints {
     public static readonly RIOT_API_KEY = process.env.RIOT_API_KEY || "";
@@ -11,16 +12,21 @@ class RiotApiEndpoints {
     getRegions = () => `${this.BASE_URL}/lol/region/v1/regions`;
 }
 
-export class RiotAPIService {
+export class RiotAPIService implements HasApiHelth {
     private readonly headers = {
-        'X-Riot-Token': RiotApiEndpoints.RIOT_API_KEY!
+        'X-Riot-Token': RiotApiEndpoints.RIOT_API_KEY
     };
 
+
+    public async health(): Promise<boolean> {
+        return await this.getRegions().then(res => true).catch(err => false);
+    }
     // Get PUUID by summoner name
     async getPUUID(gameName: string, tagLine: string, region: string = 'americas') {
-        console.log(gameName, tagLine, region);
         const url = new RiotApiEndpoints().getPUUID(gameName, tagLine, region);
+        // TODO: ave to databae and check db if it exists and return it if it does if it doesn't the fetch from riot and save to db
         const response = await axios.get(url, { headers: this.headers });
+
         return response.data.puuid;
     }
 
@@ -34,6 +40,8 @@ export class RiotAPIService {
     // Get match details
     async getMatchDetails(matchId: string) {
         const url = new RiotApiEndpoints().getMatchDetails(matchId);
+
+        // TODO: save to databae and check db if it exists and return it if it does if it doesn't the fetch from riot and save to db
         const response = await axios.get(url, { headers: this.headers });
         return response.data;
     }
@@ -51,7 +59,10 @@ export class RiotAPIService {
 
     async getRegions() {
         const url = new RiotApiEndpoints().getRegions();
+    
         const response = await axios.get(url, { headers: this.headers });
         return response.data;
     }
+
+    
 }

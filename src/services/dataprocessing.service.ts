@@ -1,10 +1,11 @@
 import { ChampionStat, ProcessedMatch, ProcessedStats, RoleStats, TiltAnalysis } from "../utils/interfaces.util";
 
-export class DataProcessorService {
+export class DataProcessorService{
+
+
     processMatchData(matches: any[], puuid: string):ProcessedStats {
         const playerMatches = this.extractPlayerMatches(matches, puuid);
-
-        return {
+        const response_payload = {
             totalGames: playerMatches.length,
             wins: playerMatches.filter(m => m.win).length,
             losses: playerMatches.filter(m => !m.win).length,
@@ -18,6 +19,8 @@ export class DataProcessorService {
             peakPerformance: this.findPeakMoment(playerMatches),
             tiltPatterns: this.analyzeTiltPatterns(playerMatches),
         };
+        // save this in the db
+        return response_payload;
     }
 
     private extractPlayerMatches(matches: any[], puuid: string): ProcessedMatch[] {
@@ -30,7 +33,8 @@ export class DataProcessorService {
                 throw new Error('Player not found in match');
             }
 
-            return {
+            // TODO: save this to the database
+            const response_payload = {
                 matchId: match.metadata.matchId,
                 gameDate: new Date(match.info.gameCreation),
                 win: participant.win,
@@ -47,6 +51,7 @@ export class DataProcessorService {
                 position: participant.teamPosition || 'UNKNOWN',
                 gameDuration: match.info.gameDuration,
             };
+            return response_payload;
         });
     }
 

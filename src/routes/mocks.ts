@@ -258,3 +258,15 @@ export const get_wrapped_mock = () => {
     }
 }
     
+
+export const get_api_health = () => {
+    return {
+        "status": "ok",
+        "timestamp": "2024-10-11T...",
+        "services": {
+            "riotAPI": "connected",
+            "bedrock": "connected",
+            "database": "connected"
+        }
+    }
+}

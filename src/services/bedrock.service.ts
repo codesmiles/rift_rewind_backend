@@ -1,9 +1,9 @@
 
 import { BedrockRuntimeClient, InvokeModelCommand } from '@aws-sdk/client-bedrock-runtime';
-import { Achievement, AlternateReality, ProcessedStats } from '../utils/interfaces.util';
+import { Achievement, AlternateReality, HasApiHelth, ProcessedStats } from '../utils/interfaces.util';
 
 
-export class BedrockService {
+export class BedrockService implements HasApiHelth {
     private client: BedrockRuntimeClient;
     private modelId = 'anthropic.claude-3-haiku-20240307-v1:0'; // Cheapest model
 
@@ -13,6 +13,31 @@ export class BedrockService {
         });
     }
 
+    public async health(): Promise<boolean> {
+        try {
+            const command = new InvokeModelCommand({
+                modelId: this.modelId,
+                contentType: 'application/json',
+                accept: 'application/json',
+                body: JSON.stringify({
+                    anthropic_version: 'bedrock-2023-05-31',
+                    max_tokens: 1000,
+                    messages: [
+                        {
+                            role: 'user',
+                            content: 'Hello, how are you?',
+                        },
+                    ],
+                    temperature: 0.7,
+                }),
+            });
+
+            return await this.client.send(command).then(res => true).catch(err => false);
+        } catch (error) {
+            console.error('Bedrock invocation error:', error);
+            throw new Error('Failed to generate AI content');
+        }
+    }
     private async invokeModel(prompt: string): Promise<string> {
         const payload = {
             anthropic_version: 'bedrock-2023-05-31',
