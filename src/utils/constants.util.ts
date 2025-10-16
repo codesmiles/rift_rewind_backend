@@ -15,7 +15,10 @@ export enum CrudOperationsEnum {
     FIND_SINGLE = "findSingle",
     BULK_CREATE = "bulkCreate",
     FIND_OR_CREATE = "findOrCreate",
-    FIND_MANY_OR_CREATE_MANY = "findManyOrCreateMany"
+    FIND_MANY_OR_CREATE_MANY = "findManyOrCreateMany",
+    SYNC_INDEXES = "syncIndexes",
+    DROP_INDEXES = "dropIndexes",
+    SEARCH = "search"
 }
   
 

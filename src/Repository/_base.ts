@@ -1,76 +1,58 @@
 import { Model, UpdateQuery, FilterQuery, Schema, Document, PopulateOptions } from "mongoose";
-import { ConstantEnums, CrudOperationsEnum, ResponseMessageEnum, PaginatedResponse } from "../utils";
+import { ConstantEnums, CrudOperationsEnum, ResponseMessageEnum, PaginatedResponse } from "../utils"; // Assuming these are defined elsewhere
 
-abstract class BaseAbstract<T, I> {
-    abstract create(payload: T): Promise<I>;
+// --- Type Refinements ---
+
+// Ensure 'I' extends Mongoose's Document for better type inference
+abstract class BaseAbstract<T, I extends Document> {
+    abstract create(payload: T, options?: { populate?: string[] }): Promise<I>; // Added options
     abstract getAll(queries: {
-        page: number;
-        pageSize: number;
-        queries: object;
+        page?: number;
+        pageSize?: number;
+        queries?: FilterQuery<I>; // Use FilterQuery for better type safety
         search?: string;
     }, options?: { populate?: string[] }): Promise<PaginatedResponse<I>>;
-    abstract count(query: object): Promise<number>;
-    abstract update(query: object, payload: UpdateQuery<I>): Promise<I | null>;
+    abstract count(query?: FilterQuery<I>): Promise<number>; // Use FilterQuery
+    abstract update(query: FilterQuery<I>, payload: UpdateQuery<I>): Promise<I | null>; // Use FilterQuery
     abstract delete(id: string): Promise<void>;
     abstract search(query: string): Promise<I[] | null>;
-    abstract exists(query: object): Promise<boolean>;
-    abstract findSingle(payload: object, options?: { projection?: object }): Promise<I | null>;
+    abstract exists(query: FilterQuery<I>): Promise<boolean>; // Use FilterQuery
+    abstract findSingle(payload: FilterQuery<I>, options?: { projection?: object; populate?: string[] }): Promise<I | null>; // Use FilterQuery
     abstract softDelete(id: string): Promise<void>;
     abstract syncIndexes(): Promise<void>;
     abstract dropIndexes(): Promise<void>;
-    abstract findOrCreate(payload: Partial<I>, key: keyof I): Promise<I>
-    abstract findMany(filter: FilterQuery<I>): Promise<I[]>
-    abstract findManyOrCreateMany(identifiers: string[], key: keyof I): Promise<I[]>;
+    abstract findOrCreate(payload: Partial<I>, key: keyof I, options?: { populate?: string[] }): Promise<I>; // Added options
+    abstract findMany(filter: { key: keyof I; values: any[] }, options?: { populate?: string[] }): Promise<I[]>; // Refined filter type
+    abstract findManyOrCreateMany(identifiers: any[], key: keyof I, options?: { populate?: string[] }): Promise<I[]>; // Added options, refined identifiers type
+    abstract bulkCreate(payload: T[]): Promise<I[]>; // Added bulkCreate to abstract
 }
 
-// Create a type instead of an interface
 type MongoFilters<T> = FilterQuery<T> & {
     $text?: { $search: string };
 };
 
-type BaseServiceConstructorType<I> = {
-    // Model: Model<I, SanitizeQueryHelpers<I>>;
+type BaseServiceConstructorType<I extends Document> = { // I extends Document here too
     Model: Model<I>;
     serializer?: string[];
     allowedOperations?: CrudOperationsEnum[];
 }
 
-/**
- * Type for the projection object used in Mongoose queries.
- * @typedef {Object} ProjectionType
- * @property {string} [key] - The key of the field to project.
- * @property {0|1|{ $meta: "textScore" }} [value] - The value of the field to project.
-*/
 type ProjectionType = {
     [key: string]: 0 | 1 | { $meta: "textScore" };
 };
 
-/**
- * Function to handle not allowed operations.
- * @param {CrudOperationsEnum} operation - The operation that is not allowed.
- * @returns {never} - Throws an error.
- */
 const notAllowedMsg = (operation: CrudOperationsEnum): never => {
     const err = new Error(`Operation ${operation} not allowed`);
-    console.log(err)
+    console.error(err); // Use console.error for errors
     throw err;
 };
 
 
-/**
- * BaseService class that provides CRUD operations for Mongoose models.
- * @template T - Type of the payload for create and update operations.
- * @template I - Type of the Mongoose model instance.
- */
-export default class BaseService<T, I> extends BaseAbstract<T, I> {
+export default class BaseService<T, I extends Document> extends BaseAbstract<T, I> { // I extends Document here
     private readonly Model: Model<I>;
     private readonly allowedOperations: CrudOperationsEnum[];
     protected readonly serializer: string[];
 
-    /**
-     * Constructor for BaseService.
-     * @param {BaseServiceConstructorType<I>} builder - Object containing the model and allowed operations.
-     */
     public constructor(builder: BaseServiceConstructorType<I>) {
         super();
         this.Model = builder.Model;
@@ -78,61 +60,56 @@ export default class BaseService<T, I> extends BaseAbstract<T, I> {
         this.allowedOperations = builder.allowedOperations || Object.values(CrudOperationsEnum);
     }
 
-    /**
-     * Getter for the model name.
-     * @returns {string} - The name of the model.
-     */
     public get NAME(): string {
         return this.Model.modelName;
     }
 
-    /**
-     * finds a single document in the database.
-     * @param payload object
-     * @param options {projection?: object}
-     * @returns I | null
-     */
-    async findSingle(payload: object, options?: { projection?: object, populate?: string[] }): Promise<I | null> {
+    // --- Helper for common projection logic ---
+    private get _excludedFieldsProjection(): string {
+        return this.serializer.map(field => `-${field}`).join(" ");
+    }
+
+    // --- Helper for population options ---
+    private _getPopulateOptions(paths: string[]): PopulateOptions[] {
+        const selectString = this._excludedFieldsProjection;
+        return paths.map(path => ({ path, select: selectString }));
+    }
+
+    // --- Helper for common base query ---
+    private _getBaseQuery(query: FilterQuery<I>): FilterQuery<I> {
+        return { isDeleted: false, ...query };
+    }
+
+    async findSingle(payload: FilterQuery<I>, options?: { projection?: object; populate?: string[] }): Promise<I | null> {
         if (!this.allowedOperations.includes(CrudOperationsEnum.FIND_SINGLE)) {
             notAllowedMsg(CrudOperationsEnum.FIND_SINGLE);
         }
         console.log(ResponseMessageEnum.FILTERED_FIELDS, this.serializer);
-        const findSingle = await this.Model.findOne({ isDeleted: false, ...payload }, options?.projection).select(this.serializer.map(field => `-${field}`)).exec();
 
-        if (findSingle !== null && options?.populate && options?.populate?.length > 0) {
-            const doc = findSingle as Document<I>;
-            const populateOptions: PopulateOptions[] = options.populate.map(path => ({ path, select: this.serializer.map(field => `-${field}`).join(" ") }));
-            await doc.populate(populateOptions);
+        let query = this.Model.findOne(this._getBaseQuery(payload), options?.projection)
+            .select(this._excludedFieldsProjection);
+
+        if (options?.populate?.length) {
+            query = query.populate(this._getPopulateOptions(options.populate));
         }
-        return findSingle as I | null;
+
+        return await query.exec();
     }
 
-    /**
-     * Creates a new document in the database.
-     * @param {T} payload - The data to create the document with.
-     * @returns {Promise<I>} - The created document.
-     */
     async create(payload: T, options?: { populate?: string[] }): Promise<I> {
         if (!this.allowedOperations.includes(CrudOperationsEnum.CREATE)) {
             notAllowedMsg(CrudOperationsEnum.CREATE);
         }
-        let create = new this.Model(payload);
-        await create.save();
+        let create = await this.Model.create(payload); // Model.create returns the created document
 
         if (options?.populate?.length) {
-            create = await (create as Document).populate(
-                options.populate.map(path => ({ path, select: this.serializer.map(field => `-${field}`).join(" ") }))
-            );
+            // Mongoose's populate method can be called directly on the Document
+            create = await create.populate(this._getPopulateOptions(options.populate));
         }
-        return create as I;
+        return create;
     }
 
-    /**
-     * Retrieves all documents from the database with optional pagination and search.
-     * @param {object} queries - The query parameters for pagination and search.
-     * @returns {Promise<PaginatedResponse<I>>} - The paginated response containing the documents.
-     */
-    async getAll(queries: { page?: number; pageSize?: number; queries?: object; search?: string; }, options?: { populate?: string[] }): Promise<PaginatedResponse<I>> {
+    async getAll(queries: { page?: number; pageSize?: number; queries?: FilterQuery<I>; search?: string; }, options?: { populate?: string[] }): Promise<PaginatedResponse<I>> {
         if (!this.allowedOperations.includes(CrudOperationsEnum.GETALL)) {
             notAllowedMsg(CrudOperationsEnum.GETALL);
         }
@@ -143,15 +120,14 @@ export default class BaseService<T, I> extends BaseAbstract<T, I> {
         const mongoFilters: MongoFilters<I> = { ...queries.queries };
 
         const skip = (page - 1) * pageSize;
-        const total = await this.Model.countDocuments({ isDeleted: false, ...mongoFilters });
+        const baseQuery = this._getBaseQuery(mongoFilters);
+        const total = await this.Model.countDocuments(baseQuery);
 
-        // Only add text search if search query is provided and is not empty
         const isTextSearch = Boolean(queries.search);
-        if (isTextSearch && queries.search) { // Add extra check for TypeScript
+        if (isTextSearch && queries.search) {
             mongoFilters.$text = { $search: queries.search };
         }
 
-        // Build projection object for select()
         const projection: ProjectionType = {};
         this.serializer.forEach(field => {
             projection[field] = 0;
@@ -160,16 +136,28 @@ export default class BaseService<T, I> extends BaseAbstract<T, I> {
             projection.score = { $meta: "textScore" };
         }
 
-        // 
-        const formattedQueries = {} as Record<string, MongoFilters<I | T> | string>;
+        const formattedQueries = {} as Record<string, MongoFilters<I | T> | string | any>; // Use 'any' as a fallback if types are complex
         for (const [key, value] of Object.entries(mongoFilters)) {
             const schemaPath = this.Model.schema.path(key);
-            if (!schemaPath) continue; // Skip if field is not in schema
-            const isArrayField = schemaPath instanceof Schema.Types.Array || schemaPath.instance === 'Array';
-            formattedQueries[key] = isArrayField ? { $in: Array.isArray(value) ? value : [value] } : value;
+            if (!schemaPath) {
+                // If the field isn't in the schema, it might be a query operator or an invalid field.
+                // You might want to log this or explicitly allow only schema fields.
+                // For now, let's allow query operators like $text, $or, etc.
+                if (!key.startsWith('$')) continue;
+            }
+            if (schemaPath) { // Only process if it's a schema path
+                const isArrayField = schemaPath instanceof Schema.Types.Array || schemaPath.instance === 'Array';
+                formattedQueries[key] = isArrayField ? { $in: Array.isArray(value) ? value : [value] } : value;
+            } else { // Handle query operators that are not schema paths
+                formattedQueries[key] = value;
+            }
         }
-        // check if formatted queries value has a "nil" as string
-        if (Object.values(formattedQueries).includes(ConstantEnums.NULL)) {
+
+        // Check if formatted queries value has a "nil" as string
+        // Better to handle "nil" parsing at the API/controller level,
+        // transforming it to `null` or `undefined` before it reaches service.
+        // For now, adapting to current logic:
+        if (Object.values(formattedQueries).some(val => val === ConstantEnums.NULL)) {
             return {
                 payload: [],
                 meta: {
@@ -181,7 +169,7 @@ export default class BaseService<T, I> extends BaseAbstract<T, I> {
             };
         }
 
-        let data = await this.Model.find({ isDeleted: false, ...formattedQueries })
+        let queryChain = this.Model.find(this._getBaseQuery(formattedQueries))
             .select(projection)
             .sort(
                 isTextSearch
@@ -189,14 +177,13 @@ export default class BaseService<T, I> extends BaseAbstract<T, I> {
                     : { createdAt: "desc" }
             )
             .skip(skip)
-            .limit(pageSize)
-            .exec();
+            .limit(pageSize);
 
-
-        // populate relative fields while serializing unwanted values
         if (options?.populate?.length) {
-            data = await this.Model.populate(data, options.populate.map(path => ({ path, select: this.serializer.map(field => `-${field}`).join(" ") })));
+            queryChain = queryChain.populate(this._getPopulateOptions(options.populate));
         }
+
+        const data = await queryChain.exec();
 
         return {
             payload: data,
@@ -209,47 +196,34 @@ export default class BaseService<T, I> extends BaseAbstract<T, I> {
         };
     }
 
-    /**
-   * Retrieves all documents from the database without the pagination feature
-   * await service.findMany({ status: 'active' });
-   * await service.findMany([{ key: '_id', values: ['id1', 'id2', 'id3'] }]);
-   * @param {FilterQuery<I>} filter - the paylooad you want toquery
-   * @returns {Promise<I[]>} - return an array of response
-   */
-    async findMany(filter: { key: string; values: string[] }, options?: { populate?: string[] }): Promise<I[]> {
+    async findMany(filter: { key: keyof I; values: any[] }, options?: { populate?: string[] }): Promise<I[]> {
         if (!this.allowedOperations.includes(CrudOperationsEnum.FIND_MANY)) {
             notAllowedMsg(CrudOperationsEnum.FIND_MANY);
         }
 
         console.log(ResponseMessageEnum.FILTERED_FIELDS, this.serializer);
-        const mongoFilter = { isDeleted: false, ...filter.values.length && { [filter.key]: { $in: filter.values } } };
+        // Using `any[]` for values for flexibility, consider a more specific type if possible
+        const mongoFilter = this._getBaseQuery({ [filter.key]: { $in: filter.values } } as FilterQuery<I>);
 
-        let response = await this.Model.find(mongoFilter)
-            .select(this.serializer.map(field => `-${field}`)).exec()
+        let queryChain = this.Model.find(mongoFilter)
+            .select(this._excludedFieldsProjection);
 
-        // Filter out missing ones
-        const foundValues = response.map(doc => String(doc[filter.key as keyof I]));
-        const missing_keys = filter.values.filter(value => !foundValues.includes(String(value)));
-        console.log({ response, foundValues, missing_keys });
+        if (options?.populate?.length) {
+            queryChain = queryChain.populate(this._getPopulateOptions(options.populate));
+        }
+
+        const response = await queryChain.exec();
+
+        const foundValues = new Set(response.map(doc => String(doc[filter.key])));
+        const missing_keys = filter.values.filter(value => !foundValues.has(String(value)));
 
         if (missing_keys.length > 0) {
             throw new Error(`${ResponseMessageEnum.MISSING_DATABASE_KEYS}: ${missing_keys.join(", ")}`);
         }
 
-        // populate relative fields while serializing unwanted values
-        if (response.length && options?.populate?.length) {
-            response = await this.Model.populate(response, options.populate.map(path => ({ path, select: this.serializer.map(field => `-${field}`).join(" ") })));
-        }
-
         return response;
     }
 
-    /**
-  * Find Or Create 
-  * @param {Partial<I>} payload an array of value you want to check
-  * @param {keyof I} key the key you want to find
-  * @returns {I} array of data of existing and created documents
-  */
     async findOrCreate(
         payload: Partial<I>,
         key: keyof I,
@@ -260,83 +234,77 @@ export default class BaseService<T, I> extends BaseAbstract<T, I> {
 
         console.log(ResponseMessageEnum.FILTERED_FIELDS, this.serializer);
         const value = payload[key];
-        const filter = { [key]: value, isDeleted: false } as FilterQuery<T>;
-        let doc = await this.Model.findOne(filter).select(this.serializer.map(field => `-${field}`)) ?? await this.Model.create(payload);
+        const filter = this._getBaseQuery({ [key]: value } as FilterQuery<I>);
 
-        if (options?.populate && options.populate.length > 0) {
-            doc = await this.Model.populate(doc, options.populate.map(path => ({ path, select: this.serializer.map(field => `-${field}`).join(" ") })));
+        // Optimization: Use findOneAndUpdate with upsert: true for atomicity
+        let doc = await this.Model.findOneAndUpdate(
+            filter,
+            { $setOnInsert: payload }, // Only set these fields if a new document is inserted
+            {
+                upsert: true,     // Create if not found
+                new: true,        // Return the new document
+                setDefaultsOnInsert: true // Apply schema defaults on new document
+            }
+        )
+            .select(this._excludedFieldsProjection);
+
+        if (options?.populate?.length) {
+            doc = await doc.populate(this._getPopulateOptions(options.populate));
         }
 
-        return doc
+        return doc as I; // Cast needed because findOneAndUpdate might return null if not found (but upsert:true prevents this)
     }
 
-    /**
-     * Find Many Or Create Many
-     * @param {string[]} identifiers an array of value you want to check
-     * @param {keyof I} key the key you want to find
-     * @returns {I[]} array of data of existing and created documents
-     */
-    async findManyOrCreateMany(identifiers: string[], key: keyof I, options?: { populate: string[] }) {
+    async findManyOrCreateMany(identifiers: any[], key: keyof I, options?: { populate?: string[] }) {
         if (!this.allowedOperations.includes(CrudOperationsEnum.FIND_MANY_OR_CREATE_MANY)) {
             notAllowedMsg(CrudOperationsEnum.FIND_MANY_OR_CREATE_MANY);
         }
         console.log(ResponseMessageEnum.FILTERED_FIELDS, this.serializer);
 
-        const filter = { [key]: { $in: identifiers } } as FilterQuery<I>;
-        let existingDocs = await this.Model.find({ isDeleted: false, ...filter }).select(this.serializer.map(field => `-${field}`)).exec();
-        const existingValues = existingDocs.map(doc => doc[key] as string);
+        const filter = this._getBaseQuery({ [key]: { $in: identifiers } } as FilterQuery<I>);
+        let existingDocs = await this.Model.find(filter).select(this._excludedFieldsProjection).exec();
+        const existingValues = new Set(existingDocs.map(doc => doc[key] as string));
 
-        const toCreate = identifiers.filter(val => !existingValues.includes(val));
-        let createdDocs: I[] = await this.Model.insertMany(
-            toCreate.map(val => ({ [key]: val })), { ordered: false }
-        ) as I[];
-
-        if (options && options.populate && options?.populate?.length > 0) {
-            existingDocs = await this.Model.populate(existingDocs, options.populate.map(path => ({ path, select: this.serializer.map(field => `-${field}`).join(" ") })));
-            createdDocs = await this.Model.populate(createdDocs, options.populate.map(path => ({ path, select: this.serializer.map(field => `-${field}`).join(" ") })));
+        const toCreate = identifiers.filter(val => !existingValues.has(val));
+        let createdDocs: I[] = [];
+        if (toCreate.length > 0) {
+            createdDocs = await this.Model.insertMany(
+                toCreate.map(val => ({ [key]: val })), { ordered: false }
+            ) as unknown as I[]; // insertMany returns an array of documents
         }
 
-        return [...existingDocs, ...createdDocs] as I[];
+
+        if (options?.populate?.length) {
+            existingDocs = await this.Model.populate(existingDocs, this._getPopulateOptions(options.populate));
+            if (createdDocs.length > 0) {
+                createdDocs = await this.Model.populate(createdDocs, this._getPopulateOptions(options.populate));
+            }
+        }
+
+        return [...existingDocs, ...createdDocs];
     }
 
-    /**
-   * Create multiple payload at once
-   * @param {T} payload - the payload you want to create
-   * @returns { Promise<I[]>} - return an array of response
-   */
     async bulkCreate(payload: T[]): Promise<I[]> {
         if (!this.allowedOperations.includes(CrudOperationsEnum.BULK_CREATE)) {
             notAllowedMsg(CrudOperationsEnum.BULK_CREATE);
         }
 
-        const docs = await this.Model.insertMany(payload) as (I & Document)[];
-        return docs.map(doc => doc.toObject() as I);
+        const docs = await this.Model.insertMany(payload);
+        // insertMany returns Documents, no need for .toObject() if I extends Document
+        return docs as unknown as I[];
     }
 
-    /**
-     * Updates a document in the database.
-     * @param {object} query - The query to find the document to update.
-     * @param {UpdateQuery<I>} payload - The data to update the document with.
-     * @returns {Promise<I | null>} - The updated document or null if not found.
-     */
-    // { $addToSet: { instructor: userId } },
-    // { $pull: { instructor: { $in: [userId1, userId2] } } },
-    async update(query: object, payload: UpdateQuery<I>): Promise<I | null> {
+    async update(query: FilterQuery<I>, payload: UpdateQuery<I>): Promise<I | null> {
         if (!this.allowedOperations.includes(CrudOperationsEnum.UPDATE)) {
             notAllowedMsg(CrudOperationsEnum.UPDATE);
         }
         console.log(ResponseMessageEnum.FILTERED_FIELDS, this.serializer);
-        const update = await this.Model.findOneAndUpdate({ isDeleted: false, ...query }, payload, {
+        const update = await this.Model.findOneAndUpdate(this._getBaseQuery(query), payload, {
             new: true,
-        }).select(this.serializer.map(field => `-${field}`)).exec();
-        return update as I | null;
+        }).select(this._excludedFieldsProjection).exec();
+        return update;
     }
 
-    /**
-     * Deletes a document from the database.
-     * @param {string} id - The ID of the document to delete.
-     * @returns {Promise<void>} - A promise that resolves when the document is deleted.
-     */
     async delete(id: string): Promise<void> {
         if (!this.allowedOperations.includes(CrudOperationsEnum.DELETE)) {
             notAllowedMsg(CrudOperationsEnum.DELETE);
@@ -346,82 +314,65 @@ export default class BaseService<T, I> extends BaseAbstract<T, I> {
         await this.Model.findByIdAndDelete(id);
     }
 
-    /**
-     * Soft deletes a document in the database.
-     * @param {string} _id - The ID of the document to soft delete.
-     * @returns {Promise<void>} - A promise that resolves when the document is soft deleted.
-     */
     async softDelete(_id: string): Promise<void> {
         if (!this.allowedOperations.includes(CrudOperationsEnum.SOFT_DELETE)) {
             notAllowedMsg(CrudOperationsEnum.SOFT_DELETE);
         }
-        await this.Model.updateOne({ _id }, { isDeleted: true, deletedAt: new Date() });
+        // Use updateOne for efficiency, it returns an UpdateWriteOpResult, not the doc
+        await this.Model.updateOne({ _id, isDeleted: false }, { isDeleted: true, deletedAt: new Date() });
     }
 
-    /**
-     * Checks if a document exists in the database.
-     * @param {object} query - The query to find the document.
-     * @returns {Promise<boolean>} - True if the document exists, false otherwise.
-     */
-    async exists(query: object): Promise<boolean> {
+    async exists(query: FilterQuery<I>): Promise<boolean> {
         if (!this.allowedOperations.includes(CrudOperationsEnum.EXISTS)) {
             notAllowedMsg(CrudOperationsEnum.EXISTS);
         }
-        const exists = await this.Model.exists({ isDeleted: false, ...query });
+        const exists = await this.Model.exists(this._getBaseQuery(query));
         return !!exists;
     }
 
-    /**
-     * Searches for documents in the database based on a query.
-     * @param {string} query - The search query.
-     * @returns {Promise<I[] | null>} - An array of matching documents or null if none found.
-     */
     async search(query: string): Promise<I[] | null> {
+        if (!this.allowedOperations.includes(CrudOperationsEnum.SEARCH)) {
+            notAllowedMsg(CrudOperationsEnum.SEARCH);
+        }
+
         console.log(ResponseMessageEnum.FILTERED_FIELDS, this.serializer);
-        await this.Model.syncIndexes()
-        console.log(`indexes synced`);
-        const results = await this.Model.find({
-            isDeleted: false,
+
+        const projection: ProjectionType = Object.fromEntries(this.serializer.map(field => [field, 0]));
+        projection.score = { $meta: "textScore" };
+
+        const results = await this.Model.find(this._getBaseQuery({
             $text: { $search: query }
-        })
-            .select({
-                ...Object.fromEntries(this.serializer.map(field => [field, 0])),
-                score: { $meta: "textScore" }
-            })
+        }))
+            .select(projection)
             .sort({ score: { $meta: "textScore" } })
             .exec();
 
-        return results;
+        return results.length ? results : null; // Return null if no results for consistency with previous `null` return type
     }
 
-    /**
-     * Counts the number of documents in the database.
-     * @param {object} query - The query to count documents.
-     * @returns {Promise<number>} - The count of documents.
-     */
-    async count(query?: object): Promise<number> {
+    async count(query?: FilterQuery<I>): Promise<number> {
         if (!this.allowedOperations.includes(CrudOperationsEnum.COUNT)) {
             notAllowedMsg(CrudOperationsEnum.COUNT);
         }
-        const count = await this.Model.countDocuments({ isDeleted: false, ...query });
+        const count = await this.Model.countDocuments(this._getBaseQuery(query || {})); // Handle optional query
         return count;
     }
 
-    /**
-     * Syncs indexes for the model.
-     * @returns {Promise<void>} - A promise that resolves when indexes are synced.
-     */
     async syncIndexes(): Promise<void> {
-        await this.Model.syncIndexes()
-        console.log(`indexes synced`);
-    }
-    /**
-     * Drops indexes for the model.
-     * @returns {Promise<void>} - A promise that resolves when indexes are dropped.
-     */
-    async dropIndexes(): Promise<void> {
-        await this.Model.collection.dropIndexes();
-        console.log(`indexes dropped`);
+        if (!this.allowedOperations.includes(CrudOperationsEnum.SYNC_INDEXES)) { // Added check
+            notAllowedMsg(CrudOperationsEnum.SYNC_INDEXES);
+        }
+        await this.Model.syncIndexes();
+        console.log(`Indexes synced for ${this.NAME}`); // More specific log
     }
 
+    async dropIndexes(): Promise<void> {
+        if (!this.allowedOperations.includes(CrudOperationsEnum.DROP_INDEXES)) { // Added check
+            notAllowedMsg(CrudOperationsEnum.DROP_INDEXES);
+        }
+        // Ensure you don't drop _id index without care, Mongoose often recreates it.
+        // This drops all user-defined indexes.
+        await this.Model.collection.dropIndexes();
+        console.log(`Indexes dropped for ${this.NAME}`); // More specific log
+    }
 }
