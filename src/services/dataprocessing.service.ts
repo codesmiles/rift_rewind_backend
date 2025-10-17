@@ -1,9 +1,9 @@
 import { ChampionStat, ProcessedMatch, ProcessedStats, RoleStats, TiltAnalysis } from "../utils/interfaces.util";
 
-export class DataProcessorService{
+export class DataProcessorService {
 
 
-    processMatchData(matches: any[], puuid: string):ProcessedStats {
+    processMatchData(matches: any[], puuid: string): ProcessedStats {
         const playerMatches = this.extractPlayerMatches(matches, puuid);
         const response_payload = {
             totalGames: playerMatches.length,
@@ -185,11 +185,12 @@ export class DataProcessorService{
         return roles;
     }
 
-    private calculateAverageKDA(matches: any[]):number {
+    private calculateAverageKDA(matches: any[]): number {
         if (matches.length === 0) return 0;
         const totalKDA = matches.reduce((sum, m) => sum + m.kda, 0);
         return totalKDA / matches.length;
-}
+    }
+
     private calculateAverageVision(matches: any[]) {
         if (matches.length === 0) return 0;
         const totalVision = matches.reduce((sum, m) => sum + m.visionScore, 0);

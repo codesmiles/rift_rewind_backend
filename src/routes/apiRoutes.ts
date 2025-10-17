@@ -4,6 +4,7 @@ import { RiotAPIService } from '../services/riot.service';
 import { InsightsService } from '../services/insights.service';
 import { BedrockService } from '../services/bedrock.service';
 import { DataProcessorService } from '../services/dataprocessing.service';
+import { GoogleAIService } from '../services/googleAiStudioService';
 
 const router = Router();
 const riotAPI = new RiotAPIService();
@@ -44,14 +45,13 @@ router.post('/wrapped/generate', async (req:Request, res:Response) => {
         const puuid = await riotAPI.getPUUID(gameName, tagLine, region);
 
         // Fetch matches
-        const countNumber = count;
-        const matches = await riotAPI.getAllMatches(puuid,countNumber);
+        const matches = await riotAPI.getAllMatches(puuid,count);
 
-        // Generate insights
+        // // Generate insights
         const wrapped = await insightsService.generateFullWrapped(matches, puuid, gameName, tagLine);
-        console.log("\n\n\n response", { puuid, matches, wrapped });
+        // console.log("\n\n\n response", { puuid, matches, wrapped });
         
-        const response = new ResponseFormat(true, wrapped)
+        const response = new ResponseFormat(true, {wrapped, puuid, matches})
         res.json(response.toJson());
     } catch (error: any) {
         const response = new ResponseFormat(false, error)
@@ -117,12 +117,13 @@ router.post("/ai/alternate-reality", async (req:Request, res:Response) => {
         return res.status(500).json(response.toJson());
     }
 })
+
 router.post("/summoner/validate", async (req:Request, res:Response) => {
     try {
         // validate summoner
         const { gameName, tagLine } = req.body;
         const puuid = await riotAPI.getPUUID(gameName, tagLine);
-        const response = new ResponseFormat(true, puuid)
+        const response = new ResponseFormat(true, { puuid });
         return res.json(response.toJson());
     } catch (error: any) {
         const response = new ResponseFormat(false, error.message)
@@ -131,7 +132,10 @@ router.post("/summoner/validate", async (req:Request, res:Response) => {
 })
 
 router.get("/health", (req:Request, res:Response) => {
-    const response = new ResponseFormat(true, {"Riot API Health": riotAPI.health(), "Bedrock API Health": new BedrockService().health()})
+    const response = new ResponseFormat(true, {
+        // "Riot API Health": riotAPI.health(),
+        "Bedrock API Health": new GoogleAIService().health()
+    })
     return res.json(response.toJson());
 })
 

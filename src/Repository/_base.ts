@@ -48,7 +48,7 @@ const notAllowedMsg = (operation: CrudOperationsEnum): never => {
 };
 
 
-export default class BaseService<T, I extends Document> extends BaseAbstract<T, I> { // I extends Document here
+export class BaseService<T, I extends Document> extends BaseAbstract<T, I> { // I extends Document here
     private readonly Model: Model<I>;
     private readonly allowedOperations: CrudOperationsEnum[];
     protected readonly serializer: string[];

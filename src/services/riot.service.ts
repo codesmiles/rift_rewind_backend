@@ -1,5 +1,7 @@
 import axios from 'axios';
 import { HasApiHelth } from '../utils';
+import { RiotApiRepository } from '../Repository/RiotApiRepository';
+import { IRiotApi } from '../Repository/Entities/RiotApi.entity';
 
 class RiotApiEndpoints {
     public static readonly RIOT_API_KEY = process.env.RIOT_API_KEY || "";
@@ -19,15 +21,25 @@ export class RiotAPIService implements HasApiHelth {
 
 
     public async health(): Promise<boolean> {
-        return await this.getRegions().then(res => true).catch(err => false);
+        const getRegion = await this.getRegions()
+        if(!getRegion){
+            return false;
+        }
+        return true;
     }
+
     // Get PUUID by summoner name
     async getPUUID(gameName: string, tagLine: string, region: string = 'americas') {
-        const url = new RiotApiEndpoints().getPUUID(gameName, tagLine, region);
-        // TODO: ave to databae and check db if it exists and return it if it does if it doesn't the fetch from riot and save to db
-        const response = await axios.get(url, { headers: this.headers });
-
-        return response.data.puuid;
+        // const riotApiRepository = new RiotApiRepository();
+        // let riotApi = await riotApiRepository.findSingle({ gameName, tagLine });
+        let riotApi = null;
+        
+        if (!riotApi || riotApi === null) {
+            const url = new RiotApiEndpoints().getPUUID(gameName, tagLine, region);
+            const response = await axios.get(url, { headers: this.headers });
+            riotApi = { puuid: response.data.puuid, gameName, tagLine, matchIds: [] };
+        }
+        return riotApi.puuid;
     }
 
     // Get match history (last 100 matches)
