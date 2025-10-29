@@ -1,7 +1,7 @@
 export const mongoConfig = {
-    mongoURI: process.env.MONGODB_URL,
-    mongoSetup: {
-		useNewUrlParser: true,
-		useUnifiedTopology: true,
-	},
-}
+  mongoURI: process.env.MONGODB_URL,
+  mongoSetup: {
+    useNewUrlParser: true,
+    useUnifiedTopology: true,
+  },
+};
